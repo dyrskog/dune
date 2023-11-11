@@ -64,6 +64,9 @@ namespace TSPPlanner
       // Min cost index matrix
       std::vector<std::vector<int>> path_indices;
 
+      // Plan message
+      IMC::PlanSpecification plan_spec;
+
       //! Constructor.
       //! @param[in] name task name.
       //! @param[in] ctx context.
@@ -205,8 +208,6 @@ namespace TSPPlanner
         // Solve TSP problem using dynamic programming
         double minCost = 100000;
         int prev;
-
-        
         for (int i = 0; i < n_points; ++i){
           // Find cost of every path from node 0 to node i visiting every 
           // other node exactly once, before returning to node 0
@@ -219,7 +220,6 @@ namespace TSPPlanner
           }
           minCost = std::min(minCost, newCost);
         }
-
         // Reconstruct shortest path
         int id_mask = (1 << n_points) - 1;
         std::vector<int> path_idx; // Final path indices
@@ -230,10 +230,50 @@ namespace TSPPlanner
           prev = path_idx.back();
         }
         path_idx.push_back(0);
-
         // Print path in console
         debugPrintPath(path_idx);
 
+        // Generate the plan messages
+        plan_spec.plan_id = "testplan1";
+        plan_spec.description = "This is just a test";
+        std::string prev_maneuver_id;
+
+        for (int i = 0; i < path_idx.size(); i++){
+          int waypoint_idx = path_idx[i];
+          // Create goto maneuver
+          IMC::Goto goto_maneuver;
+          goto_maneuver.lat = all_points[waypoint_idx][0];
+          goto_maneuver.lon = all_points[waypoint_idx][1];
+          goto_maneuver.speed = 10;
+          goto_maneuver.speed_units = IMC::SpeedUnits::SUNITS_METERS_PS;
+          goto_maneuver.z = 0;
+          goto_maneuver.z_units = IMC::Z_DEPTH;
+
+          // Create plan maneuver object containing the goto maneuver
+          IMC::PlanManeuver plan_man;
+          std::string man_name = "goto" + std::to_string(i);
+          plan_man.maneuver_id = man_name;
+          plan_man.data.set(goto_maneuver); // Specify the maneuver
+
+          // Add goto maneuver to plan specification
+          plan_spec.maneuvers.push_back(plan_man);
+
+          if (i == 0){
+            // Name the first goto maneuver of the plan
+            plan_spec.start_man_id = plan_man.maneuver_id;
+
+          }
+          else{
+            // Create plan transition and add to the plan specification
+            IMC::PlanTransition plan_trans;
+            plan_trans.source_man = prev_maneuver_id;
+            plan_trans.dest_man = plan_man.maneuver_id;
+            plan_trans.conditions = "ManeuverIsDone";
+            plan_spec.transitions.push_back(plan_trans);
+          }
+          prev_maneuver_id = plan_man.maneuver_id;
+        }
+        spew("finished creating plan!");
       }
 
 
