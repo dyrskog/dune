@@ -40,20 +40,47 @@ namespace TSPPlanner
   {
     using DUNE_NAMESPACES;
 
+    struct Arguments
+    {
+      std::vector<double> points; // Points of interest
+    };
+
     struct Task: public DUNE::Tasks::Task
     {
+      Arguments m_args;
+      // Points of interest
+      std::vector<std::vector<double>> all_points;
+      // Number of POIs
+      int n_points;
+      // Current vehicle position
+      double current_pos[2];
+
       //! Constructor.
       //! @param[in] name task name.
       //! @param[in] ctx context.
       Task(const std::string& name, Tasks::Context& ctx):
         DUNE::Tasks::Task(name, ctx)
       {
+        param("Points to Visit", m_args.points);
       }
 
       //! Update internal state with new parameter values.
       void
       onUpdateParameters(void)
       {
+        n_points = (int) m_args.points.size()/2;
+        // Allocate space for input points + initial position
+        all_points.resize(n_points + 1, std::vector<double>(2));
+
+        // Put current position + POIs in the same array
+        all_points[0][0] = current_pos[0];
+        all_points[0][1] = current_pos[1];
+        spew("points: %f, %f", all_points[0][0], all_points[0][1]);
+        for (int i = 0; i < n_points; i++){
+          all_points[i+1][0] = Angles::radians(m_args.points[i*2]);
+          all_points[i+1][1] = Angles::radians(m_args.points[(i*2)+1]);
+          spew("points: %f, %f", all_points[i+1][0], all_points[i+1][1]);
+        }
       }
 
       //! Reserve entity identifiers.
