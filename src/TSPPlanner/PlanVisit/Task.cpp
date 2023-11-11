@@ -67,6 +67,9 @@ namespace TSPPlanner
       // Plan message
       IMC::PlanSpecification plan_spec;
 
+      // Vehicle service status
+      bool m_service;
+
       //! Constructor.
       //! @param[in] name task name.
       //! @param[in] ctx context.
@@ -75,6 +78,8 @@ namespace TSPPlanner
       {
         // Subscribe to estimated vehicle state
         bind<IMC::EstimatedState>(this);
+        // Subscribe to vehicle status
+        bind<IMC::VehicleState>(this);
 
         param("Points to Visit", m_args.points);
 
@@ -138,6 +143,7 @@ namespace TSPPlanner
       onMain(void)
       {
         bool planGenerated = false;
+        bool planTriggered = false;
         while (!stopping())
         {
           waitForMessages(1.0);
@@ -146,6 +152,12 @@ namespace TSPPlanner
             // Vehicle position is updated, generate plan
             generatePlan();
             planGenerated = true;
+          }
+
+          if (m_service && planGenerated && !planTriggered){
+            // Plan is generated, vehicle is in SERVICE mode, plan can be sent to vehicle
+            triggerPlan();
+            planTriggered = true;
           }
 
         }
@@ -163,6 +175,12 @@ namespace TSPPlanner
 
         current_pos[0] = m_lat;
         current_pos[1] = m_lon;
+      }
+
+      void
+      consume(const IMC::VehicleState* state)
+      {
+        m_service = (state->op_mode == IMC::VehicleState::VS_SERVICE);
       }
 
       //! On activation
@@ -234,7 +252,7 @@ namespace TSPPlanner
         debugPrintPath(path_idx);
 
         // Generate the plan messages
-        plan_spec.plan_id = "testplan1";
+        plan_spec.plan_id = "testplan2";
         plan_spec.description = "This is just a test";
         std::string prev_maneuver_id;
 
@@ -276,7 +294,6 @@ namespace TSPPlanner
         spew("finished creating plan!");
       }
 
-
       double 
       TSP(int subset, int i)
       {
@@ -311,6 +328,34 @@ namespace TSPPlanner
         return minCost;
       }
 
+      void
+      triggerPlan()
+      {
+        // Create plandb object
+        Math::Random::Generator* m_gen = Math::Random::Factory::create(Math::Random::Factory::c_default);
+        IMC::PlanDB plandb;
+        plandb.type = IMC::PlanDB::DBT_REQUEST;
+        plandb.op = IMC::PlanDB::DBOP_SET;
+        plandb.plan_id = plan_spec.plan_id;
+        plandb.request_id = m_gen->random() & 0xFFFF;
+        plandb.arg.set(plan_spec);
+        plandb.setDestination(getSystemId());
+
+        dispatch(plandb);
+
+        // Trigger plan
+        IMC::PlanControl plan_control;
+        plan_control.type = IMC::PlanControl::PC_REQUEST;
+        plan_control.op = IMC::PlanControl::PC_START;
+        plan_control.request_id = 70;
+        plan_control.plan_id = plan_spec.plan_id;
+        plan_control.arg.set(plan_spec);
+        plan_control.setDestination(getSystemId());
+
+        dispatch(plan_control);
+        
+        spew("plan dispatched!");
+      }
 
       void debugPrintPath(std::vector<int> path)
       {
