@@ -56,6 +56,14 @@ namespace TSPPlanner
       // Current vehicle position
       double current_pos[2];
 
+      // TSP variables
+      // Distance matrix
+      std::vector<std::vector<double>> dist;
+      // Min cost matrix
+      std::vector<std::vector<double>> min_distances;
+      // Min cost index matrix
+      std::vector<std::vector<int>> path_indices;
+
       //! Constructor.
       //! @param[in] name task name.
       //! @param[in] ctx context.
@@ -126,9 +134,17 @@ namespace TSPPlanner
       void
       onMain(void)
       {
+        bool planGenerated = false;
         while (!stopping())
         {
           waitForMessages(1.0);
+
+          if (current_pos[0] != 0 && !planGenerated){
+            // Vehicle position is updated, generate plan
+            generatePlan();
+            planGenerated = true;
+          }
+
         }
       }
 
@@ -158,6 +174,114 @@ namespace TSPPlanner
       onDeactivation(void)
       {
         setEntityState(IMC::EntityState::ESTA_NORMAL, Status::CODE_IDLE);
+      }
+
+      void
+      generatePlan(void)
+      {
+        n_points = all_points.size();
+        // Allocate memory for matrices
+        dist.resize(n_points + 1, std::vector<double>(n_points+1));
+        min_distances.resize(n_points, std::vector<double>(1 << n_points));
+        path_indices.resize(n_points, std::vector<int>(1 << n_points));
+        
+        // Create graph representation of distances
+        // Vertices = points, edge weights = distances
+        all_points[0][0] = current_pos[0]; // Update current position
+        all_points[0][1] = current_pos[1];
+        for (int i = 0; i < n_points; i++){
+          for (int j = 0; j < n_points; j++){
+            // Find distance from point i to every other point j
+            double lat1 = all_points[i][0];
+            double lon1 = all_points[i][1];
+            double hae1 = 0;
+            double lat2 = all_points[j][0];
+            double lon2 = all_points[j][1];
+            double hae2 = 0;
+            dist[i][j] = Coordinates::WGS84::distance(lat1, lon1, hae1, lat2, lon2, hae2);
+          }
+        }
+
+        // Solve TSP problem using dynamic programming
+        double minCost = 100000;
+        int prev;
+
+        
+        for (int i = 0; i < n_points; ++i){
+          // Find cost of every path from node 0 to node i visiting every 
+          // other node exactly once, before returning to node 0
+          // Determine the cheapest one
+          int subset = (1 << n_points) - 1; // Mask used to keep track of visited nodes
+          double newCost = TSP(subset, i) + dist[i][0]; 
+          if (newCost < minCost){
+            // Keep track of index of cheapest second-to-last node
+            prev = i;
+          }
+          minCost = std::min(minCost, newCost);
+        }
+
+        // Reconstruct shortest path
+        int id_mask = (1 << n_points) - 1;
+        std::vector<int> path_idx; // Final path indices
+        path_idx.push_back(prev);
+        for (int i = 0; i < n_points-2; i++){
+          path_idx.push_back(path_indices[prev][id_mask]);
+          id_mask = id_mask & (~(1 << prev));
+          prev = path_idx.back();
+        }
+        path_idx.push_back(0);
+
+        // Print path in console
+        debugPrintPath(path_idx);
+
+      }
+
+
+      double 
+      TSP(int subset, int i)
+      {
+        if (subset == ((1 << i) | 1)){
+          // If subset is {1, i}, return distance from 1 to i
+          return dist[0][i];
+        }
+        
+        if (min_distances[i][subset] != 0){
+          // If C(S, i) is already found, return C(S,i)
+          return min_distances[i][subset];
+        }
+        
+        double minCost = 100000;
+        int prev = 0;
+        
+        for (int j = 0; j < n_points; ++j){
+          // If j is not already visited, not equal to i and not the starting node
+          if ((subset & (1 << j)) && j!=i && j!= 0){
+            // Calculate C(S-{i},j)
+            double newCost = TSP((subset & (~(1 << i))), j) + dist[j][i];
+            if (newCost < minCost){
+              prev = j;
+            }
+            minCost = std::min(minCost, newCost);
+          }
+        }
+        // Save index of previous node in cheapest route
+        path_indices[i][subset] = prev;
+        // Memoize cheapest route from node 0 to node i
+        min_distances[i][subset] = minCost;
+        return minCost;
+      }
+
+
+      void debugPrintPath(std::vector<int> path)
+      {
+        std::string pathstr = "Planned path: ";
+        for (int i = 0; i<path.size(); i++){
+          pathstr = pathstr + std::to_string(path[i]);
+          if (i != path.size() - 1){
+            pathstr = pathstr + "->";
+          }
+        }
+        spew(pathstr.c_str());
       }
 
     };
