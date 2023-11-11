@@ -61,6 +61,9 @@ namespace TSPPlanner
       Task(const std::string& name, Tasks::Context& ctx):
         DUNE::Tasks::Task(name, ctx)
       {
+        // Subscribe to estimated vehicle state
+        bind<IMC::EstimatedState>(this);
+
         param("Points to Visit", m_args.points);
       }
 
@@ -122,6 +125,19 @@ namespace TSPPlanner
           waitForMessages(1.0);
         }
       }
+
+      void
+      consume(const IMC::EstimatedState* state)
+      { 
+        double m_lat;
+        double m_lon;
+        float m_height;
+        Coordinates::toWGS84(*state, m_lat, m_lon, m_height);
+
+        current_pos[0] = m_lat;
+        current_pos[1] = m_lon;
+      }
+
     };
   }
 }
