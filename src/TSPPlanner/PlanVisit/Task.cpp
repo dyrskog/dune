@@ -43,6 +43,7 @@ namespace TSPPlanner
     struct Arguments
     {
       std::vector<double> points; // Points of interest
+      bool active; // Task activation status
     };
 
     struct Task: public DUNE::Tasks::Task
@@ -65,6 +66,11 @@ namespace TSPPlanner
         bind<IMC::EstimatedState>(this);
 
         param("Points to Visit", m_args.points);
+
+        param("Active", m_args.active)
+        .defaultValue("true");
+        paramActive(Tasks::Parameter::SCOPE_GLOBAL,
+                    Tasks::Parameter::VISIBILITY_USER);
       }
 
       //! Update internal state with new parameter values.
@@ -128,7 +134,9 @@ namespace TSPPlanner
 
       void
       consume(const IMC::EstimatedState* state)
-      { 
+      {
+        if (!isActive())
+            return;
         double m_lat;
         double m_lon;
         float m_height;
@@ -136,6 +144,20 @@ namespace TSPPlanner
 
         current_pos[0] = m_lat;
         current_pos[1] = m_lon;
+      }
+
+      //! On activation
+      void
+      onActivation(void)
+      {
+        setEntityState(IMC::EntityState::ESTA_NORMAL, Status::CODE_ACTIVE);
+      }
+
+      //! On deactivation
+      void
+      onDeactivation(void)
+      {
+        setEntityState(IMC::EntityState::ESTA_NORMAL, Status::CODE_IDLE);
       }
 
     };
