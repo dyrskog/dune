@@ -112,11 +112,9 @@ namespace TSPPlanner
         // Put current position + POIs in the same array
         all_points[0][0] = current_pos[0];
         all_points[0][1] = current_pos[1];
-        spew("points: %f, %f", all_points[0][0], all_points[0][1]);
         for (int i = 0; i < n_points; i++){
           all_points[i+1][0] = Angles::radians(m_args.points[i*2]);
           all_points[i+1][1] = Angles::radians(m_args.points[(i*2)+1]);
-          spew("points: %f, %f", all_points[i+1][0], all_points[i+1][1]);
         }
       }
 
@@ -158,7 +156,7 @@ namespace TSPPlanner
         bool planTriggered = false;
 
         if (!pointsValid){
-          spew("Points of interest not given in n lat/lon pairs, deactivating!");
+          war("Points of interest not given in n lat/lon pairs, deactivating!");
           requestDeactivation();
         }
 
@@ -166,7 +164,7 @@ namespace TSPPlanner
         {
           waitForMessages(1.0);
 
-          if (current_pos[0] != 0 && !planGenerated){
+          if (m_service && !planGenerated){
             // Vehicle position is updated, generate plan
             generatePlan();
             planGenerated = true;
@@ -224,6 +222,9 @@ namespace TSPPlanner
         setEntityState(IMC::EntityState::ESTA_NORMAL, Status::CODE_IDLE);
       }
 
+      //! Generates a path from initial position, visiting all points of interest
+      //! before returning to the initial position.
+      //! The plan is then formalized as IMC messages ready to be sent to the vehicle
       void
       generatePlan(void)
       {
@@ -321,6 +322,10 @@ namespace TSPPlanner
         spew("finished creating plan!");
       }
 
+      //! Solves the traveling salesman problem recursively using dynamic programming
+      //! @param subset bitmask representation of subset S
+      //! @param i index of end point
+      //! @return length of shortest path from intial position to point i 
       double 
       TSP(int subset, int i)
       {
@@ -355,6 +360,7 @@ namespace TSPPlanner
         return minCost;
       }
 
+      //! Sends the plan to PlanDB and starts the plan execution
       void
       triggerPlan()
       {
@@ -384,10 +390,13 @@ namespace TSPPlanner
         spew("plan dispatched!");
       }
 
+      //! Prints the path indices in the terminal
+      //! @param path vector containing the path indices
       void debugPrintPath(std::vector<int> path)
       {
         std::string pathstr = "Planned path: ";
-        for (int i = 0; i<path.size(); i++){
+        int path_len = path.size();
+        for (int i = 0; i<path_len; i++){
           pathstr = pathstr + std::to_string(path[i]);
           if (i != path.size() - 1){
             pathstr = pathstr + "->";
