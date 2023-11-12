@@ -70,6 +70,9 @@ namespace TSPPlanner
       // Vehicle service status
       bool m_service;
 
+      // Input points format check
+      bool pointsValid = false;
+
       //! Constructor.
       //! @param[in] name task name.
       //! @param[in] ctx context.
@@ -80,11 +83,10 @@ namespace TSPPlanner
         bind<IMC::EstimatedState>(this);
         // Subscribe to vehicle status
         bind<IMC::VehicleState>(this);
+        // Subscribe to plan control
+        bind<IMC::PlanControlState>(this);
 
         param("Points to Visit", m_args.points);
-
-        param("Active", m_args.active)
-        .defaultValue("true");
         paramActive(Tasks::Parameter::SCOPE_GLOBAL,
                     Tasks::Parameter::VISIBILITY_USER);
       }
@@ -93,7 +95,17 @@ namespace TSPPlanner
       void
       onUpdateParameters(void)
       {
-        n_points = (int) m_args.points.size()/2;
+        int pointSize = (int) m_args.points.size();
+        if (pointSize % 2 == 0) {
+          n_points = (int) m_args.points.size()/2;
+          pointsValid = true;
+        }
+        else {
+          // Input points are not valid
+          requestDeactivation();
+          return;
+        }
+        
         // Allocate space for input points + initial position
         all_points.resize(n_points + 1, std::vector<double>(2));
 
@@ -144,6 +156,12 @@ namespace TSPPlanner
       {
         bool planGenerated = false;
         bool planTriggered = false;
+
+        if (!pointsValid){
+          spew("Points of interest not given in n lat/lon pairs, deactivating!");
+          requestDeactivation();
+        }
+
         while (!stopping())
         {
           waitForMessages(1.0);
@@ -181,6 +199,15 @@ namespace TSPPlanner
       consume(const IMC::VehicleState* state)
       {
         m_service = (state->op_mode == IMC::VehicleState::VS_SERVICE);
+      }
+
+      void
+      consume(const IMC::PlanControlState* state)
+      {
+        // Deactivate the task if plan was executed successfully
+        if (state->last_outcome == PlanControlState::LPO_SUCCESS && isActive()){
+          requestDeactivation();
+        }
       }
 
       //! On activation
